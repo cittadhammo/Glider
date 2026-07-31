@@ -177,6 +177,10 @@ uint8_t caster_input_status(void) {
     return fpga_write_reg8(CSR_INPUT_STATUS, 0x00);
 }
 
+uint8_t caster_input_debug(void) {
+    return fpga_write_reg8(CSR_INPUT_DEBUG, 0x00);
+}
+
 void caster_input_force_internal(void) {
     fpga_write_reg8(CSR_INPUT_CTRL, INPUT_CTRL_INTERNAL);
 }

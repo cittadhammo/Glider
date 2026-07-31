@@ -744,10 +744,12 @@ static void log_input_status(uint8_t input_status) {
     uint16_t vact;
     uint16_t htotal;
     uint16_t vtotal;
+    uint8_t input_debug;
 
     caster_input_get_measured(&hact, &vact, &htotal, &vtotal);
-    syslog_printf("Input status %02x, measured %u x %u, total %u x %u",
-            input_status, hact, vact, htotal, vtotal);
+    input_debug = caster_input_debug();
+    syslog_printf("Input status %02x debug %02x, measured %u x %u, total %u x %u",
+            input_status, input_debug, hact, vact, htotal, vtotal);
 }
 
 static void reload_to_internal_source(bool *tmds_mode, const osd_fonts_t *fonts,
