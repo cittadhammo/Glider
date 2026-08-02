@@ -750,6 +750,8 @@ static void log_input_status(uint8_t input_status) {
     input_debug = caster_input_debug();
     syslog_printf("Input status %02x debug %02x, measured %u x %u, total %u x %u",
             input_status, input_debug, hact, vact, htotal, vtotal);
+    if (config.input_sel != INPUT_SEL_DP)
+        adv7611_log_signal_status();
 }
 
 static void reload_to_internal_source(bool *tmds_mode, const osd_fonts_t *fonts,
@@ -815,6 +817,7 @@ portTASK_FUNCTION(ui_task, pvParameters) {
     bool usbpd_wake_armed = false;
     bool live_was_selected = false;
     uint8_t last_logged_input_status = 0xff;
+    uint8_t last_logged_input_debug = 0xff;
     TickType_t no_signal_deadline = 0;
     TickType_t usbpd_wake_arm_time = 0;
     ui_menu_t menu;
@@ -933,9 +936,12 @@ portTASK_FUNCTION(ui_task, pvParameters) {
         }
 
         uint8_t input_status = caster_input_status();
-        if (input_status != last_logged_input_status) {
+        uint8_t input_debug = caster_input_debug();
+        if ((input_status != last_logged_input_status) ||
+                (input_debug != last_logged_input_debug)) {
             log_input_status(input_status);
             last_logged_input_status = input_status;
+            last_logged_input_debug = input_debug;
         }
         update_input_tracking(input_status, &tmds_mode, &live_was_selected);
         if (input_status & INPUT_STATUS_LOST) {
