@@ -483,6 +483,10 @@ static bool menu_config_changed(const config_t *previous) {
                     sizeof(config.button_actions)) != 0);
 }
 
+// Set by usbapp when a USB command changes the update mode, so the UI task
+// re-syncs its mode index without stealing USB response timing.
+volatile bool usbapp_mode_changed = false;
+
 static void preview_tone_modal(const ui_menu_t *menu) {
     int lightness = config.lightness;
     int contrast = config.contrast;
@@ -973,6 +977,13 @@ portTASK_FUNCTION(ui_task, pvParameters) {
         // Key press logic
         btn_event_t btn_event;
         BaseType_t result = xQueueReceive(btn_queue, &btn_event, pdMS_TO_TICKS(200));
+
+        // Re-sync the mode index if a USB host command changed the mode.
+        if (usbapp_mode_changed) {
+            usbapp_mode_changed = false;
+            mode = mode_index_for((update_mode_t)config.update_mode);
+        }
+
         if (result != pdTRUE)
             continue;
 
