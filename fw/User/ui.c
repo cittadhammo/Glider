@@ -1038,18 +1038,27 @@ portTASK_FUNCTION(ui_task, pvParameters) {
                     &autoclear_damage_last);
         }
 
-        // Re-apply the saved update mode once the FPGA has certainly finished
-        // its power-up refresh (the immediate write in start_display_pipeline
-        // is best-effort and can be dropped by a busy FPGA). Re-reading
-        // config.update_mode keeps this correct even if the mode changed
-        // again in the meantime. The redraw re-renders the current content in
-        // the right mode instead of waiting for the next damage.
-        if ((mode_reapply_deadline != 0) &&
-                (((int32_t)xTaskGetTickCount() - (int32_t)mode_reapply_deadline) >= 0)) {
-            mode_reapply_deadline = 0;
-            caster_setmode(0, 0, config.hact, config.vact,
-                    (update_mode_t)config.update_mode);
-            caster_redraw(0, 0, config.hact, config.vact);
+        // Re-apply the saved update mode once the FPGA has finished its
+        // power-up refresh: the immediate write in start_display_pipeline can
+        // be dropped while the FPGA's operation queue is still busy (observed
+        // on quick replugs: status 0x29, OP_QUEUE bit set). Poll for idle and
+        // retry for up to 10 s; re-reading config.update_mode keeps this
+        // correct even if the mode changed again meanwhile. The redraw then
+        // re-renders the current content in the right mode.
+        if (mode_reapply_deadline != 0) {
+            if (!caster_is_busy()) {
+                mode_reapply_deadline = 0;
+                syslog_printf("Re-applying saved update mode %d (FPGA idle)",
+                        config.update_mode);
+                caster_setmode(0, 0, config.hact, config.vact,
+                        (update_mode_t)config.update_mode);
+                caster_redraw(0, 0, config.hact, config.vact);
+            } else if (((int32_t)xTaskGetTickCount() -
+                    (int32_t)mode_reapply_deadline) >= 0) {
+                mode_reapply_deadline = 0;
+                syslog_print("FPGA still busy after 10 s; giving up on "
+                        "mode re-apply");
+            }
         }
 
         // Perform config saves requested by other tasks (e.g. the USB tone
