@@ -460,11 +460,19 @@ static const char *autoclear_mode_label(void) {
     }
 }
 
+// If a tone was stored for the given update mode (from a previous tone
+// change made while that mode was active), make it the active tone.
+static void apply_recalled_tone(update_mode_t mode_id) {
+    if (config_recall_tone_for_mode(mode_id))
+        caster_set_tone(config.lightness, config.contrast);
+}
+
 static void apply_display_mode(update_mode_t id, const osd_fonts_t *fonts,
         TickType_t *osd_timeout) {
     mode = mode_index_for(id);
     config.update_mode = modes[mode].id;
     caster_setmode(0, 0, config.hact, config.vact, modes[mode].id);
+    apply_recalled_tone(modes[mode].id);
     config_save();
 
     draw_status_popup(fonts, "Mode", modes[mode].name);
@@ -836,6 +844,10 @@ portTASK_FUNCTION(ui_task, pvParameters) {
     };
 
     mode = mode_index_for((update_mode_t)config.update_mode);
+    // Recall before the pipeline starts: start_display_pipeline() applies
+    // the resulting config tone itself, so no LUT call is needed here (and
+    // the caster is not ready for one yet).
+    config_recall_tone_for_mode((update_mode_t)config.update_mode);
 
     bool tmds_mode = false;
     start_display_pipeline(&tmds_mode, &fonts, &signal_osd_state,
@@ -987,10 +999,13 @@ portTASK_FUNCTION(ui_task, pvParameters) {
         btn_event_t btn_event;
         BaseType_t result = xQueueReceive(btn_queue, &btn_event, pdMS_TO_TICKS(200));
 
-        // Re-sync the mode index if a USB host command changed the mode.
+        // A USB host command changed the mode: re-sync the mode index and
+        // recall the tone stored for that mode, matching button-driven
+        // switches. Any pending save picks up the recalled values.
         if (usbapp_mode_changed) {
             usbapp_mode_changed = false;
             mode = mode_index_for((update_mode_t)config.update_mode);
+            apply_recalled_tone((update_mode_t)config.update_mode);
         }
 
         // Perform config saves requested by other tasks (e.g. the USB tone
@@ -1053,6 +1068,12 @@ portTASK_FUNCTION(ui_task, pvParameters) {
                             autoclear_previous_mode = previous_config.autoclear_mode;
                         }
                     }
+                    // Note the tone for the current mode before saving so the
+                    // per-mode arrays are persisted by this very save.
+                    if ((previous_config.lightness != config.lightness) ||
+                            (previous_config.contrast != config.contrast)) {
+                        config_note_tone_for_mode((update_mode_t)config.update_mode);
+                    }
                     config_save();
                     autoclear = config.autoclear_mode != AC_OFF;
                     if (previous_config.input_sel != config.input_sel) {
@@ -1074,6 +1095,7 @@ portTASK_FUNCTION(ui_task, pvParameters) {
                         mode = mode_index_for((update_mode_t)config.update_mode);
                         caster_setmode(0, 0, config.hact, config.vact,
                                 modes[mode].id);
+                        apply_recalled_tone(modes[mode].id);
                         reset_autoclear_state(&autoclear_timeout,
                                 &autoclear_damage_counter,
                                 &autoclear_damage_last);

@@ -75,6 +75,10 @@ static void config_init_settings(void) {
     config.autoclear_interval = AC_5MIN;
     config.autoclear_threshold = AC_THRES_MED;
     config.osd_scale_2x = 0;
+    for (int i = 0; i < TONE_MODE_COUNT; i++) {
+        config.tone_lightness[i] = TONE_UNSET;
+        config.tone_contrast[i] = TONE_UNSET;
+    }
 }
 
 void config_init(void) {
@@ -306,6 +310,21 @@ void config_validate_loaded(size_t loaded_size) {
         config.osd_scale_2x = default_osd_scale_2x_from_ppi();
     else
         config.osd_scale_2x = clamp_int(config.osd_scale_2x, 0, 1);
+
+    // Tone arrays are appended to config_t: legacy saves are shorter and
+    // leave the init values (TONE_UNSET) in place, which is exactly the
+    // "no tone stored for this mode" state.
+    for (int i = 0; i < TONE_MODE_COUNT; i++) {
+        if ((config.tone_lightness[i] == TONE_UNSET) ||
+                (config.tone_contrast[i] == TONE_UNSET)) {
+            config.tone_lightness[i] = TONE_UNSET;
+            config.tone_contrast[i] = TONE_UNSET;
+        }
+        else {
+            config.tone_lightness[i] = clamp_int(config.tone_lightness[i], -3, 3);
+            config.tone_contrast[i] = clamp_int(config.tone_contrast[i], -1, 6);
+        }
+    }
 }
 
 #ifndef GLIDER_HOST_TEST
@@ -370,3 +389,27 @@ void config_save(void) {
 void config_request_save(void) {
 }
 #endif
+
+// Legacy configs (shorter than the tone arrays) leave the arrays at their
+// init values, so no migration is needed: TONE_UNSET means "nothing stored
+// for this mode" and such modes keep whatever tone is currently active.
+void config_note_tone_for_mode(update_mode_t mode) {
+    if ((unsigned)mode >= TONE_MODE_COUNT)
+        return;
+    config.tone_lightness[mode] = config.lightness;
+    config.tone_contrast[mode] = config.contrast;
+}
+
+bool config_recall_tone_for_mode(update_mode_t mode) {
+    if ((unsigned)mode >= TONE_MODE_COUNT)
+        return false;
+    if (config.tone_lightness[mode] == TONE_UNSET)
+        return false;
+    if ((config.lightness == config.tone_lightness[mode]) &&
+            (config.contrast == config.tone_contrast[mode]))
+        return false;
+    config.lightness = config.tone_lightness[mode];
+    config.contrast = config.tone_contrast[mode];
+    return true;
+}
+

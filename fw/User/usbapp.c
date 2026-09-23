@@ -233,8 +233,13 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
             break;
         case USBCMD_SETMODE:
             retval = caster_setmode(x0, y0, x1, y1, (update_mode_t)param);
-            if (retval == 0)
+            if (retval == 0) {
+                // Track the mode in config so GETMODE reports USB-initiated
+                // changes; the OSD path maintains this via apply_display_mode().
+                config.update_mode = (int)param;
+                config_request_save();
                 usbapp_mode_changed = true;
+            }
             break;
         case USBCMD_SETLIGHTNESS:
             if ((param16 < -3) || (param16 > 3)) {
@@ -246,9 +251,11 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
                 goto returnval;
             }
             config.lightness = param16;
-            // Apply immediately via the tone LUT (same path the OSD uses);
-            // the flash write is deferred to the UI task so the USB handler
-            // never does flash work in its own context.
+            // Remember this tone for the current mode, apply immediately via
+            // the tone LUT (same path the OSD uses), and defer the flash
+            // write to the UI task so the USB handler never does flash work
+            // in its own context.
+            config_note_tone_for_mode((update_mode_t)config.update_mode);
             config_request_save();
             caster_set_tone(config.lightness, config.contrast);
             usb_tone_lock_give();
@@ -264,6 +271,7 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
                 goto returnval;
             }
             config.contrast = param16;
+            config_note_tone_for_mode((update_mode_t)config.update_mode);
             config_request_save();
             caster_set_tone(config.lightness, config.contrast);
             usb_tone_lock_give();
