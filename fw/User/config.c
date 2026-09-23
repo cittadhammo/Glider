@@ -333,10 +333,22 @@ void config_load(void) {
 void config_save(void) {
     SPIFFS_clearerr(&spiffs_fs);
     spiffs_file f = SPIFFS_open(&spiffs_fs, "config.bin", SPIFFS_O_CREAT | SPIFFS_O_TRUNC | SPIFFS_O_WRONLY, 0);
-    if (SPIFFS_errno(&spiffs_fs) != 0)
+    if (SPIFFS_errno(&spiffs_fs) != 0) {
+        syslog_printf("config_save: open failed: %d\n", SPIFFS_errno(&spiffs_fs));
         return;
-    
-    SPIFFS_write(&spiffs_fs, f, &config, sizeof(config));
+    }
+
+    int32_t res = SPIFFS_write(&spiffs_fs, f, &config, sizeof(config));
+    if (res != sizeof(config)) {
+        syslog_printf("config_save: write failed: %d (res %d)\n",
+                SPIFFS_errno(&spiffs_fs), (int)res);
+    }
+    // Close must not be skipped: SPIFFS flushes cached writes to flash only
+    // on close, and an unclosed fd leaks one of the 32 fd slots per save.
+    res = SPIFFS_close(&spiffs_fs, f);
+    if (res != SPIFFS_OK) {
+        syslog_printf("config_save: close failed: %d\n", SPIFFS_errno(&spiffs_fs));
+    }
 }
 #else
 void config_load(void) {
