@@ -496,6 +496,10 @@ static bool menu_config_changed(const config_t *previous) {
 // re-syncs its mode index without stealing USB response timing.
 volatile bool usbapp_mode_changed = false;
 
+// Set by usbapp when a USB command changes an auto-clear setting, so the UI
+// task re-syncs its local autoclear mirror without stealing USB timing.
+volatile bool usbapp_ac_changed = false;
+
 static void preview_tone_modal(const ui_menu_t *menu) {
     int lightness = config.lightness;
     int contrast = config.contrast;
@@ -1006,6 +1010,16 @@ portTASK_FUNCTION(ui_task, pvParameters) {
             usbapp_mode_changed = false;
             mode = mode_index_for((update_mode_t)config.update_mode);
             apply_recalled_tone((update_mode_t)config.update_mode);
+        }
+
+        // A USB host command changed an auto-clear setting: re-sync the local
+        // mirror and reset timers so the new mode/interval/threshold takes
+        // effect immediately, matching OSD-driven changes.
+        if (usbapp_ac_changed) {
+            usbapp_ac_changed = false;
+            autoclear = config.autoclear_mode != AC_OFF;
+            reset_autoclear_state(&autoclear_timeout, &autoclear_damage_counter,
+                    &autoclear_damage_last);
         }
 
         // Perform config saves requested by other tasks (e.g. the USB tone

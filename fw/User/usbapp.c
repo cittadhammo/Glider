@@ -79,6 +79,12 @@ static struct {
     uint8_t status;
     bool pending;
 } signal_getter;
+static struct {
+    uint8_t mode;
+    uint8_t interval;
+    uint8_t threshold;
+    bool pending;
+} ac_getter;
 
 void usbapp_term_out(char data, void *usr) {
 	tud_cdc_write_char(data);
@@ -293,9 +299,46 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
             mode_getter.pending = true;
             retval = 0;
             break;
+        case USBCMD_GETAC:
+            ac_getter.mode = (uint8_t)config.autoclear_mode;
+            ac_getter.interval = (uint8_t)config.autoclear_interval;
+            ac_getter.threshold = (uint8_t)config.autoclear_threshold;
+            ac_getter.pending = true;
+            retval = 0;
+            break;
         case USBCMD_GETSIGNAL:
             signal_getter.status = usbapp_query_signal_status();
             signal_getter.pending = true;
+            retval = 0;
+            break;
+        case USBCMD_SETACMODE:
+            if ((param16 < AC_OFF) || (param16 >= AC_MODE_COUNT)) {
+                retval = USBRET_BADVALUE;
+                goto returnval;
+            }
+            config.autoclear_mode = param16;
+            usbapp_ac_changed = true;
+            config_request_save();
+            retval = 0;
+            break;
+        case USBCMD_SETACINTERVAL:
+            if ((param16 < AC_1MIN) || (param16 >= AC_INTERVAL_COUNT)) {
+                retval = USBRET_BADVALUE;
+                goto returnval;
+            }
+            config.autoclear_interval = param16;
+            usbapp_ac_changed = true;
+            config_request_save();
+            retval = 0;
+            break;
+        case USBCMD_SETACTHRESHOLD:
+            if ((param16 < AC_THRES_HIGH) || (param16 >= AC_THRES_COUNT)) {
+                retval = USBRET_BADVALUE;
+                goto returnval;
+            }
+            config.autoclear_threshold = param16;
+            usbapp_ac_changed = true;
+            config_request_save();
             retval = 0;
             break;
         case USBCMD_USBBOOT:
@@ -381,6 +424,12 @@ returnval:
     else if ((retval == USBRET_SUCCESS) && signal_getter.pending) {
         signal_getter.pending = false;
         txbuf[8] = signal_getter.status;
+    }
+    else if ((retval == USBRET_SUCCESS) && ac_getter.pending) {
+        ac_getter.pending = false;
+        txbuf[8] = ac_getter.mode;
+        txbuf[9] = ac_getter.interval;
+        txbuf[10] = ac_getter.threshold;
     }
 
     tud_hid_report(0, txbuf, CFG_TUD_HID_EP_BUFSIZE);

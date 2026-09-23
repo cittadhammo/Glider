@@ -27,6 +27,7 @@
 // Set by usbapp when a USB command changes the update mode; the UI task
 // clears it and re-syncs its mode index.
 extern volatile bool usbapp_mode_changed;
+extern volatile bool usbapp_ac_changed;
 
 void ui_init(void);
 portTASK_FUNCTION(ui_task, pvParameters);
