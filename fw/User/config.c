@@ -40,10 +40,17 @@ static int clamp_int(int value, int min_value, int max_value) {
 }
 
 static bool is_valid_update_mode(int mode) {
-    return (mode == UM_FAST_MONO_BAYER) ||
+    // Everything the USB protocol can legally set and the firmware can render
+    // without extra state. UM_MANUAL_LUT_* (0/1) are excluded: they need a
+    // host-uploaded LUT, and persisting them would boot the panel into a
+    // mode the firmware cannot reproduce. Modes 2 and 7 were previously
+    // rejected here, silently resetting a saved host-set mode at boot.
+    return (mode == UM_FAST_MONO_NO_DITHER) ||
+           (mode == UM_FAST_MONO_BAYER) ||
            (mode == UM_FAST_MONO_BLUE_NOISE) ||
            (mode == UM_FAST_GREY) ||
-           (mode == UM_AUTO_LUT_NO_DITHER);
+           (mode == UM_AUTO_LUT_NO_DITHER) ||
+           (mode == UM_AUTO_LUT_ERROR_DIFFUSION);
 }
 
 static int default_osd_scale_2x_from_ppi(void) {

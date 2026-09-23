@@ -501,10 +501,10 @@ volatile bool usbapp_mode_changed = false;
 volatile bool usbapp_ac_changed = false;
 
 // Deadline for re-issuing the saved update mode after a pipeline (re)start.
-// The FPGA can drop a SETMODE written while it is still running its power-up
-// refresh (symptom: a quick replug came back in the FPGA's default mode while
-// config claimed the saved one), so the command is repeated once the FPGA is
-// certainly idle, followed by a full redraw to re-render in the right mode.
+// A SETMODE written while the FPGA is running its power-up refresh can be
+// dropped (observed: quick replugs came back in the FPGA's default mode), so
+// the command is repeated unconditionally after this delay, followed by a
+// full redraw to re-render the current content in the right mode.
 static TickType_t mode_reapply_deadline = 0;
 #define MODE_REAPPLY_DELAY_MS 2000
 
@@ -1041,23 +1041,23 @@ portTASK_FUNCTION(ui_task, pvParameters) {
         // Re-apply the saved update mode once the FPGA has finished its
         // power-up refresh: the immediate write in start_display_pipeline can
         // be dropped while the FPGA's operation queue is still busy (observed
-        // on quick replugs: status 0x29, OP_QUEUE bit set). Poll for idle and
-        // retry for up to 10 s; re-reading config.update_mode keeps this
-        // correct even if the mode changed again meanwhile. The redraw then
-        // re-renders the current content in the right mode.
+        // Re-issue the saved update mode once the FPGA has had a moment to
+        // settle after the pipeline start. This is deliberately unconditional:
+        // with live video the FPGA operation queue is effectively always
+        // busy, so waiting for an idle queue never fires (measured: give-up
+        // after 10 s without a single idle tick). Re-reading
+        // config.update_mode keeps this correct even if the mode changed
+        // again meanwhile; the redraw re-renders the current content in the
+        // right mode.
         if (mode_reapply_deadline != 0) {
-            if (!caster_is_busy()) {
+            if (((int32_t)xTaskGetTickCount() -
+                    (int32_t)mode_reapply_deadline) >= 0) {
                 mode_reapply_deadline = 0;
-                syslog_printf("Re-applying saved update mode %d (FPGA idle)",
+                syslog_printf("Re-applying saved update mode %d",
                         config.update_mode);
                 caster_setmode(0, 0, config.hact, config.vact,
                         (update_mode_t)config.update_mode);
                 caster_redraw(0, 0, config.hact, config.vact);
-            } else if (((int32_t)xTaskGetTickCount() -
-                    (int32_t)mode_reapply_deadline) >= 0) {
-                mode_reapply_deadline = 0;
-                syslog_print("FPGA still busy after 10 s; giving up on "
-                        "mode re-apply");
             }
         }
 
