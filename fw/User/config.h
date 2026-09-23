@@ -126,3 +126,7 @@ void config_reset_button_actions(void);
 void config_validate_loaded(size_t loaded_size);
 void config_load(void);
 void config_save(void);
+// Request a config save from a non-config task context (e.g. the USB
+// handler). The UI task performs the actual save, coalescing bursts.
+extern volatile bool config_save_pending;
+void config_request_save(void);

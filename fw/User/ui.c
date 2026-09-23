@@ -27,6 +27,7 @@
 #include <string.h>
 #include "autoclear.h"
 #include "ui.h"
+#include "config.h"
 #include "osd_font.h"
 #include "ui_menu.h"
 
@@ -990,6 +991,14 @@ portTASK_FUNCTION(ui_task, pvParameters) {
         if (usbapp_mode_changed) {
             usbapp_mode_changed = false;
             mode = mode_index_for((update_mode_t)config.update_mode);
+        }
+
+        // Perform config saves requested by other tasks (e.g. the USB tone
+        // setters); the 200 ms queue timeout bounds the latency and bursts
+        // coalesce into a single write.
+        if (config_save_pending) {
+            config_save_pending = false;
+            config_save();
         }
 
         if (result != pdTRUE)

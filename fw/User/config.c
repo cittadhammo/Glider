@@ -350,11 +350,23 @@ void config_save(void) {
         syslog_printf("config_save: close failed: %d\n", SPIFFS_errno(&spiffs_fs));
     }
 }
+
+// Set by tasks that want a config save without doing flash work in their
+// own context (e.g. the USB handler); consumed by the UI task, which
+// coalesces bursts into a single write.
+volatile bool config_save_pending = false;
+
+void config_request_save(void) {
+    config_save_pending = true;
+}
 #else
 void config_load(void) {
     config_init();
 }
 
 void config_save(void) {
+}
+
+void config_request_save(void) {
 }
 #endif

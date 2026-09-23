@@ -31,12 +31,15 @@
 #define USBCMD_NUKE         0x06
 #define USBCMD_USBBOOT      0x07
 #define USBCMD_RECV         0x08
+#define USBCMD_SETLIGHTNESS 0x09
+#define USBCMD_SETCONTRAST  0x0A
 #define USBCMD_GETTONE      0x0B
 #define USBCMD_GETMODE      0x0C
 #define USBCMD_GETSIGNAL    0x0D
 
 #define USBRET_GENERALFAIL  0x00
 #define USBRET_CHKSUMFAIL   0x01
+#define USBRET_BADVALUE     0x02
 #define USBRET_SUCCESS      0x55
 
 enum {

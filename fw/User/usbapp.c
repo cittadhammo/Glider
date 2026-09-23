@@ -189,6 +189,9 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
     uint16_t id = (buffer[12] << 8) | buffer[11];
     uint16_t chksum = (buffer[14] << 8) | buffer[13];
 
+    // Signed view of param for the tone commands (two's complement).
+    int16_t param16 = (int16_t)param;
+
     static bool is_recv = false;
     static uint16_t recv_name_cnt;
     static uint32_t recv_data_cnt;
@@ -232,6 +235,39 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
             retval = caster_setmode(x0, y0, x1, y1, (update_mode_t)param);
             if (retval == 0)
                 usbapp_mode_changed = true;
+            break;
+        case USBCMD_SETLIGHTNESS:
+            if ((param16 < -3) || (param16 > 3)) {
+                retval = USBRET_BADVALUE;
+                goto returnval;
+            }
+            if (!usb_tone_lock_take()) {
+                retval = USBRET_GENERALFAIL;
+                goto returnval;
+            }
+            config.lightness = param16;
+            // Apply immediately via the tone LUT (same path the OSD uses);
+            // the flash write is deferred to the UI task so the USB handler
+            // never does flash work in its own context.
+            config_request_save();
+            caster_set_tone(config.lightness, config.contrast);
+            usb_tone_lock_give();
+            retval = 0;
+            break;
+        case USBCMD_SETCONTRAST:
+            if ((param16 < -1) || (param16 > 6)) {
+                retval = USBRET_BADVALUE;
+                goto returnval;
+            }
+            if (!usb_tone_lock_take()) {
+                retval = USBRET_GENERALFAIL;
+                goto returnval;
+            }
+            config.contrast = param16;
+            config_request_save();
+            caster_set_tone(config.lightness, config.contrast);
+            usb_tone_lock_give();
+            retval = 0;
             break;
         case USBCMD_GETTONE:
             if (!usb_tone_lock_take()) {
