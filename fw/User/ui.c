@@ -500,6 +500,14 @@ volatile bool usbapp_mode_changed = false;
 // task re-syncs its local autoclear mirror without stealing USB timing.
 volatile bool usbapp_ac_changed = false;
 
+// Deadline for re-issuing the saved update mode after a pipeline (re)start.
+// The FPGA can drop a SETMODE written while it is still running its power-up
+// refresh (symptom: a quick replug came back in the FPGA's default mode while
+// config claimed the saved one), so the command is repeated once the FPGA is
+// certainly idle, followed by a full redraw to re-render in the right mode.
+static TickType_t mode_reapply_deadline = 0;
+#define MODE_REAPPLY_DELAY_MS 2000
+
 static void preview_tone_modal(const ui_menu_t *menu) {
     int lightness = config.lightness;
     int contrast = config.contrast;
@@ -691,6 +699,8 @@ static void start_display_pipeline(bool *tmds_mode, const osd_fonts_t *fonts,
     // while the panel rendered FastMonoBayer until the next mode change).
     caster_setmode(0, 0, config.hact, config.vact,
             (update_mode_t)config.update_mode);
+    mode_reapply_deadline = xTaskGetTickCount() +
+            pdMS_TO_TICKS(MODE_REAPPLY_DELAY_MS);
     apply_input_selection(tmds_mode);
     caster_osd_set_enable(false);
     *signal_osd_state = SIGNAL_OSD_NONE;
@@ -1026,6 +1036,20 @@ portTASK_FUNCTION(ui_task, pvParameters) {
             autoclear = config.autoclear_mode != AC_OFF;
             reset_autoclear_state(&autoclear_timeout, &autoclear_damage_counter,
                     &autoclear_damage_last);
+        }
+
+        // Re-apply the saved update mode once the FPGA has certainly finished
+        // its power-up refresh (the immediate write in start_display_pipeline
+        // is best-effort and can be dropped by a busy FPGA). Re-reading
+        // config.update_mode keeps this correct even if the mode changed
+        // again in the meantime. The redraw re-renders the current content in
+        // the right mode instead of waiting for the next damage.
+        if ((mode_reapply_deadline != 0) &&
+                (((int32_t)xTaskGetTickCount() - (int32_t)mode_reapply_deadline) >= 0)) {
+            mode_reapply_deadline = 0;
+            caster_setmode(0, 0, config.hact, config.vact,
+                    (update_mode_t)config.update_mode);
+            caster_redraw(0, 0, config.hact, config.vact);
         }
 
         // Perform config saves requested by other tasks (e.g. the USB tone
