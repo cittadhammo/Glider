@@ -31,6 +31,9 @@
 #define USBCMD_NUKE         0x06
 #define USBCMD_USBBOOT      0x07
 #define USBCMD_RECV         0x08
+#define USBCMD_GETTONE      0x0B
+#define USBCMD_GETMODE      0x0C
+#define USBCMD_GETSIGNAL    0x0D
 
 #define USBRET_GENERALFAIL  0x00
 #define USBRET_CHKSUMFAIL   0x01
@@ -50,3 +53,6 @@ int usbapp_term_in(int mode, void *usr);
 bool usbapp_take_suspend_event(void);
 bool usbapp_take_resume_event(void);
 portTASK_FUNCTION(usb_device_task, pvParameters);
+void usbapp_query_tone(int *lightness, int *contrast);
+uint8_t usbapp_query_mode(void);
+uint8_t usbapp_query_signal_status(void);

@@ -22,7 +22,63 @@
 //
 #include "platform.h"
 #include "app.h"
+#include "caster.h"
+#include "ui.h"
 #include "tusb.h"
+
+// Mutex protecting config tone fields and the tone LUT from concurrent
+// modification by the USB handler, the OSD UI task, and the shell.
+static SemaphoreHandle_t usb_tone_lock;
+static volatile bool usb_tone_lock_ready;
+
+static bool usb_tone_lock_take(void) {
+    if (!usb_tone_lock_ready)
+        return false;
+    return xSemaphoreTake(usb_tone_lock, pdMS_TO_TICKS(100)) == pdTRUE;
+}
+
+static void usb_tone_lock_give(void) {
+    if (usb_tone_lock_ready)
+        xSemaphoreGive(usb_tone_lock);
+}
+
+void usbapp_query_tone(int *lightness, int *contrast) {
+    if (usb_tone_lock_take()) {
+        *lightness = config.lightness;
+        *contrast = config.contrast;
+        usb_tone_lock_give();
+    }
+}
+
+uint8_t usbapp_query_mode(void) {
+    uint8_t mode = 0xFF;
+
+    if (usb_tone_lock_take()) {
+        mode = (uint8_t)config.update_mode;
+        usb_tone_lock_give();
+    }
+    return mode;
+}
+
+uint8_t usbapp_query_signal_status(void) {
+    return caster_input_status();
+}
+
+// Pending getter payloads delivered in the next IN report, matching the
+// out-of-band response pattern used for command status.
+static struct {
+    int8_t lightness;
+    int8_t contrast;
+    bool pending;
+} tone_getter;
+static struct {
+    uint8_t mode;
+    bool pending;
+} mode_getter;
+static struct {
+    uint8_t status;
+    bool pending;
+} signal_getter;
 
 void usbapp_term_out(char data, void *usr) {
 	tud_cdc_write_char(data);
@@ -174,6 +230,29 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
             break;
         case USBCMD_SETMODE:
             retval = caster_setmode(x0, y0, x1, y1, (update_mode_t)param);
+            if (retval == 0)
+                usbapp_mode_changed = true;
+            break;
+        case USBCMD_GETTONE:
+            if (!usb_tone_lock_take()) {
+                retval = USBRET_GENERALFAIL;
+                goto returnval;
+            }
+            tone_getter.lightness = config.lightness;
+            tone_getter.contrast = config.contrast;
+            usb_tone_lock_give();
+            tone_getter.pending = true;
+            retval = 0;
+            break;
+        case USBCMD_GETMODE:
+            mode_getter.mode = usbapp_query_mode();
+            mode_getter.pending = true;
+            retval = 0;
+            break;
+        case USBCMD_GETSIGNAL:
+            signal_getter.status = usbapp_query_signal_status();
+            signal_getter.pending = true;
+            retval = 0;
             break;
         case USBCMD_USBBOOT:
             //iap_usbboot();
@@ -241,8 +320,26 @@ returnval:
     txbuf[6] = exp_chksum & 0xff;
     txbuf[7] = (exp_chksum >> 8) & 0xff;
 
-    if (ret)
-        tud_hid_report(0, txbuf, CFG_TUD_HID_EP_BUFSIZE);
+    if (!ret)
+        return;
+
+    // Stamp getter payloads into reserved response bytes when a GET
+    // command completed successfully.
+    if ((retval == USBRET_SUCCESS) && tone_getter.pending) {
+        tone_getter.pending = false;
+        txbuf[8] = (uint8_t)tone_getter.lightness;
+        txbuf[9] = (uint8_t)tone_getter.contrast;
+    }
+    else if ((retval == USBRET_SUCCESS) && mode_getter.pending) {
+        mode_getter.pending = false;
+        txbuf[8] = mode_getter.mode;
+    }
+    else if ((retval == USBRET_SUCCESS) && signal_getter.pending) {
+        signal_getter.pending = false;
+        txbuf[8] = signal_getter.status;
+    }
+
+    tud_hid_report(0, txbuf, CFG_TUD_HID_EP_BUFSIZE);
 }
 
 portTASK_FUNCTION(usb_device_task, pvParameters) {
@@ -252,6 +349,8 @@ portTASK_FUNCTION(usb_device_task, pvParameters) {
     };
     
     rxqueue = xQueueCreate(1024, sizeof(char));
+    usb_tone_lock = xSemaphoreCreateMutex();
+    usb_tone_lock_ready = (usb_tone_lock != NULL);
     tusb_init(BOARD_TUD_RHPORT, &dev_init);
 
     // RTOS forever loop
