@@ -685,6 +685,12 @@ static void start_display_pipeline(bool *tmds_mode, const osd_fonts_t *fonts,
     restart_fpga();
     power_on_epd();
     caster_init();
+    // The FPGA powers up with its own built-in update mode; apply the saved
+    // mode here so boot/resume actually renders with the configured mode
+    // instead of only recording it (GETMODE/OSD previously claimed Typing
+    // while the panel rendered FastMonoBayer until the next mode change).
+    caster_setmode(0, 0, config.hact, config.vact,
+            (update_mode_t)config.update_mode);
     apply_input_selection(tmds_mode);
     caster_osd_set_enable(false);
     *signal_osd_state = SIGNAL_OSD_NONE;
